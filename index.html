@@ -329,11 +329,15 @@ async function sendSelfMessage(record){
         }
       }
     }]);
+  // 等待 LINE client flush
+    await new Promise(r => setTimeout(r, 800));
+
+    console.log("訊息已送出");
+
   }catch(err){
     console.error("LIFF 訊息傳送失敗:", err);
   }
 }
-  
 
 // ===== 打卡函式（慢速動畫 + API 後立即彈窗 + 動畫完成自動收起） =====
 async function performClockIn(status, customDate = "", customTime = "", isMakeup = false) {
@@ -403,15 +407,6 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     // ===== API 回傳後立即顯示完整彈窗，所有彈窗自動隱藏 2000ms =====
     if(apiData.message.includes("成功") && COMPANY_IPS.includes(ip)) {
 
-  Swal.fire({
-    icon: "success",
-    title: isMakeup ? "🎉 補打卡成功！" : "🎉 打卡成功！",
-    html: `<strong>打卡時間：</strong> ${apiData.date} ${apiData.time}`,
-    showConfirmButton: false,
-    timer: 2000,
-    backdrop: "rgba(0,0,0,0.5)"
-  });
-
   // ✅ 新增：傳送 LIFF 訊息給自己
   sendSelfMessage({
     userName: window.userName,
@@ -441,6 +436,18 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     networkStatus: "非公司網路"
   });
 }
+        
+        
+    Swal.fire({
+    icon: "success",
+    title: isMakeup ? "🎉 補打卡成功！" : "🎉 打卡成功！",
+    html: `<strong>打卡時間：</strong> ${apiData.date} ${apiData.time}`,
+    showConfirmButton: false,
+    timer: 2000,
+    backdrop: "rgba(0,0,0,0.5)"
+  });
+
+  
 
 
     // ===== 更新今日打卡紀錄 =====
