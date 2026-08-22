@@ -382,14 +382,26 @@ async function updateTodayRecords(){
     const recordsHTML = data.map(r => {
       let color = r.status === "下班" ? "#2ecc71" : "#3498db";
       const time = fixTimeFormat(r.time);
-      const companyText = r.company ? r.company : "一般打卡";
+      
+      // 依據後端傳回的打卡位置/網路狀態調整顯示文字
+      // 假設後端回傳的欄位叫 r.company 或 r.network，若有記錄公司名稱則顯示「公司網路」，否則顯示「異地打卡」
+      let networkText = "異地打卡";
+      if (r.company && COMPANY_IPS.includes(r.company) || r.company === "公司網路") {
+          networkText = "公司網路";
+      } else if (!r.company || r.company === "" || r.company === "一般打卡") {
+          // 如果原本是空值或一般打卡，可根據您後端是否有存 IP 來判斷，或者預設轉為「異地打卡」
+          networkText = "異地打卡"; 
+      } else {
+          networkText = r.company; // 如果有特定公司名稱則直接顯示
+      }
+
       const makeupBadge = r.isMakeup ? `<span class="badge-makeup">待審核</span>` : "";
       
       return `
         <div class="record-item" style="border-left-color: ${color};">
           <div class="record-info">
             <div class="record-status">${r.status} ${makeupBadge}</div>
-            <div class="record-details">${companyText}</div>
+            <div class="record-details">${networkText}</div>
           </div>
           <div class="record-time" style="color: ${color};">${time}</div>
         </div>
