@@ -95,7 +95,7 @@ button:hover {
     font-size:18px;
 }
 
-/* 今日打卡紀錄區塊（對齊第一組樣式） */
+/* 今日打卡紀錄區塊 */
 .section-container {
     background: #ffffff;
     border-radius: 16px;
@@ -185,7 +185,7 @@ button:hover {
     box-shadow:0 8px 14px rgba(0,0,0,0.12);
 }
 
-/* SweetAlert2 自訂外觀（對齊第一組樣式） */
+/* SweetAlert2 自訂外觀 */
 .swal2-popup.custom-swal-popup {
     border-radius: 20px !important;
     padding: 24px !important;
@@ -261,7 +261,7 @@ button:hover {
 
     <!-- 今日打卡紀錄卡片容器 -->
     <div class="section-container">
-        <div class="section-title" onclick="refreshTodayRecords()">📅 今日打卡紀錄 (點擊可刷新)</div>
+        <div class="section-title" onclick="refreshTodayRecords()">📋 今日打卡紀錄 (點擊可刷新)</div>
         <div id="todayRecords" class="records-empty">正在載入紀錄…</div>
     </div>
 
@@ -428,7 +428,7 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
 
     const ip = await getIP();
 
-    // 載入提示框 (套用 custom-swal-popup 圓角樣式)
+    // 載入提示框
     Swal.fire({
         html: `
             <div style="padding: 15px 0; text-align: center;">
