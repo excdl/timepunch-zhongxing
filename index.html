@@ -285,6 +285,12 @@ function updateDateTime() {
 setInterval(updateDateTime, 1000);
 updateDateTime();
 
+// ====== 取得今日日期字串格式 ======
+function getTodayString() {
+    const now = new Date();
+    return now.toLocaleDateString("zh-TW", { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, "/");
+}
+
 // ====== 更快的 IP 取得 ======
 async function getIP() {
     const cache = sessionStorage.getItem("myIP");
@@ -314,6 +320,7 @@ function fixTimeFormat(t) {
 // ====== 按鈕 ======
 const btnStart = document.getElementById("btnStart");
 const btnEnd   = document.getElementById("btnEnd");
+const todayRecords = document.getElementById("todayRecords");
 
 btnStart.disabled = true;
 btnEnd.disabled = true;
@@ -341,7 +348,6 @@ async function updateUserInfo() {
     window.userName = profile.displayName;
 
     document.getElementById("userInfo").textContent = `${window.userName} 您好`;
-
     document.getElementById("btnApprove").style.display = MANAGERS.includes(window.userId) ? "block" : "none";
 
     const s = document.getElementById("statusInfo");
@@ -360,15 +366,59 @@ async function updateUserInfo() {
     window.userReady = true;
 }
 
-document.addEventListener("DOMContentLoaded", updateUserInfo);
+/* ===== 今日紀錄渲染函式 ===== */
+async function updateTodayRecords(){
+  if (!window.userId) return;
+  
+  try {
+    const res = await fetch(`${API_ENDPOINT}?action=getToday&userId=${window.userId}&date=${getTodayString()}`);
+    const data = await res.json();
+
+    if (!data || !data.length) {
+      todayRecords.innerHTML = `<div class="records-empty">今日尚無打卡紀錄</div>`;
+      return;
+    }
+
+    const recordsHTML = data.map(r => {
+      let color = r.status === "下班" ? "#2ecc71" : "#3498db";
+      const time = fixTimeFormat(r.time);
+      const companyText = r.company ? r.company : "一般打卡";
+      const makeupBadge = r.isMakeup ? `<span class="badge-makeup">待審核</span>` : "";
+      
+      return `
+        <div class="record-item" style="border-left-color: ${color};">
+          <div class="record-info">
+            <div class="record-status">${r.status} ${makeupBadge}</div>
+            <div class="record-details">${companyText}</div>
+          </div>
+          <div class="record-time" style="color: ${color};">${time}</div>
+        </div>
+      `;
+    }).join("");
+
+    todayRecords.innerHTML = recordsHTML;
+  } catch (err) {
+    console.error(err);
+    todayRecords.innerHTML = `<div class="records-empty" style="color: #e74c3c;">今日打卡紀錄讀取失敗</div>`;
+  }
+}
+
+function refreshTodayRecords() {
+    const container = document.querySelector(".section-container");
+    container.classList.add("bounce");
+    setTimeout(() => {
+        container.classList.remove("bounce");
+    }, 400);
+    updateTodayRecords();
+}
 
 /* ===== 打卡後發送 Flex Message 給自己 ===== */
 async function sendSelfMessage(record) {
     if (!liff.isInClient()) return;
 
-    let headerColor = "#3498db"; // 上班藍
-    if (record.status === "下班") headerColor = "#2ecc71"; // 下班綠
-    if (record.networkStatus !== "公司網路") headerColor = "#e67e22"; // 異常橘
+    let headerColor = "#3498db"; 
+    if (record.status === "下班") headerColor = "#2ecc71"; 
+    if (record.networkStatus !== "公司網路") headerColor = "#e67e22"; 
 
     let reasonText = record.networkStatus !== "公司網路" ? "異常原因：非公司網路" : "";
 
@@ -404,9 +454,7 @@ async function sendSelfMessage(record) {
                 }
             }
         }]);
-        
         await new Promise(r => setTimeout(r, 800));
-        console.log("訊息已成功送出");
     } catch(err) {
         console.error("LIFF 訊息傳送失敗:", err);
     }
@@ -428,7 +476,6 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
 
     const ip = await getIP();
 
-    // 載入提示框
     Swal.fire({
         html: `
             <div style="padding: 15px 0; text-align: center;">
@@ -445,7 +492,6 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
         customClass: { popup: 'custom-swal-popup' }
     });
 
-    // ===== 發送打卡 API =====
     let apiData = null;
     try {
         const res = await fetch(API_ENDPOINT, {
@@ -458,7 +504,6 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
         apiData = { message:"失敗" };
     }
 
-    // ===== 判斷 API 結果 =====
     if (apiData.message && apiData.message.includes("成功")) {
         const isCompany = COMPANY_IPS.includes(ip);
         const networkStatusStr = isCompany ? "公司網路" : "非公司網路";
@@ -505,55 +550,6 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     updateTodayRecords();
 }
 
-// ===== 取得今日紀錄 =====
-async function updateTodayRecords() {
-    const now = new Date();
-    const today = now.toLocaleDateString("zh-TW", { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, "/");
-
-    try {
-        const res = await fetch(`${API_ENDPOINT}?action=getToday&userId=${window.userId}&date=${today}`);
-        const data = await res.json();
-
-        const container = document.getElementById("todayRecords");
-        if (!data || !data.length) {
-            container.innerHTML = `<div class="records-empty">今日尚無打卡紀錄</div>`;
-            return;
-        }
-
-        const recordsHTML = data.map(r => {
-            let color = r.status === "下班" ? "#2ecc71" : "#3498db";
-            const time = fixTimeFormat(r.time);
-            const companyText = COMPANY_IPS.includes(r.ip) ? "公司網路" : "非公司網路(異地)";
-            const makeupBadge = r.isMakeup ? `<span class="badge-makeup">待審核</span>` : "";
-
-            return `
-                <div class="record-item" style="border-left-color: ${color};">
-                  <div class="record-info">
-                    <div class="record-status">${r.status} ${makeupBadge}</div>
-                    <div class="record-details">${companyText}</div>
-                  </div>
-                  <div class="record-time" style="color: ${color};">${time}</div>
-                </div>
-            `;
-        }).join("");
-
-        container.innerHTML = recordsHTML;
-
-    } catch(err) {
-        console.error(err);
-        document.getElementById("todayRecords").innerHTML = `<div class="records-empty" style="color: #e74c3c;">今日打卡紀錄讀取失敗</div>`;
-    }
-}
-
-function refreshTodayRecords() {
-    const container = document.querySelector(".section-container");
-    container.classList.add("bounce");
-    setTimeout(() => {
-        container.classList.remove("bounce");
-    }, 400);
-    updateTodayRecords();
-}
-
 // ===== 按鈕事件 =====
 document.getElementById("btnStart").onclick = () => performClockIn("上班");
 document.getElementById("btnEnd").onclick = () => performClockIn("下班");
@@ -562,7 +558,7 @@ document.getElementById("btnApprove").onclick = () => {
     window.location.href = "https://script.google.com/macros/s/AKfycbyxXrvVxfgwrI-SdXM03QEYxEpG-xqyjVQcxdNz1IBK3DtFC-kUFjHhRaNtgXNU-Mdu/exec";
 };
 
-// ===== 初始化 =====
+// ===== 初始化 (包含自動載入打卡紀錄) =====
 window.onload = async () => {
     await updateUserInfo();
     await updateTodayRecords();
@@ -570,7 +566,6 @@ window.onload = async () => {
 </script>
 </body>
 </html>
-
 
 
 
