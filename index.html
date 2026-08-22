@@ -367,52 +367,52 @@ async function updateUserInfo() {
 }
 
 /* ===== 今日紀錄渲染函式 ===== */
-async function updateTodayRecords(){
-  if (!window.userId) return;
-  
-  try {
-    const res = await fetch(`${API_ENDPOINT}?action=getToday&userId=${window.userId}&date=${getTodayString()}`);
-    const data = await res.json();
+// ===== 取得今日紀錄 =====
+async function updateTodayRecords() {
+    const now = new Date();
+    const today = now.toLocaleDateString("zh-TW").replace(/\//g, "/");
+    const container = document.getElementById("todayRecords");
 
-    if (!data || !data.length) {
-      todayRecords.innerHTML = `<div class="records-empty">今日尚無打卡紀錄</div>`;
-      return;
+    try {
+        const res = await fetch(`${API_ENDPOINT}?action=getToday&userId=${window.userId}&date=${today}`);
+        const data = await res.json();
+
+        if (!data || !data.length) {
+            container.innerHTML = `<div class="records-empty">今日尚無打卡紀錄</div>`;
+            return;
+        }
+
+        const recordsHTML = data.map(r => {
+            // 判斷上班還是下班決定左側邊框顏色（上班藍、下班綠）
+            let color = r.status === "下班" ? "#2ecc71" : "#3498db";
+            const time = fixTimeFormat(r.time);
+            
+            // 判斷網路狀態：若是公司 IP 顯示「公司網路」，否則顯示「異地打卡」
+            const networkLabel = COMPANY_IPS.includes(r.ip) ? "公司網路" : "異地打卡";
+            
+            // 如果是異地打卡，可以把下方小字或顏色稍微做個區隔（選填）
+            const networkColor = COMPANY_IPS.includes(r.ip) ? "#7f8c8d" : "#e67e22";
+
+            // 補打卡標籤
+            const makeupBadge = r.isMakeup ? `<span class="badge-makeup">待審核</span>` : "";
+
+            return `
+                <div class="record-item" style="border-left-color: ${color};">
+                    <div class="record-info">
+                        <div class="record-status">${r.status} ${makeupBadge}</div>
+                        <div class="record-details" style="color: ${networkColor};">${networkLabel}</div>
+                    </div>
+                    <div class="record-time" style="color: ${color};">${time}</div>
+                </div>
+            `;
+        }).join("");
+
+        container.innerHTML = recordsHTML;
+
+    } catch(err) {
+        console.error(err);
+        container.innerHTML = `<div class="records-empty" style="color: #e74c3c;">今日打卡紀錄讀取失敗</div>`;
     }
-
-    const recordsHTML = data.map(r => {
-      let color = r.status === "下班" ? "#2ecc71" : "#3498db";
-      const time = fixTimeFormat(r.time);
-      
-      // 依據後端傳回的打卡位置/網路狀態調整顯示文字
-      // 假設後端回傳的欄位叫 r.company 或 r.network，若有記錄公司名稱則顯示「公司網路」，否則顯示「異地打卡」
-      let networkText = "異地打卡";
-      if (r.company && COMPANY_IPS.includes(r.company) || r.company === "公司網路") {
-          networkText = "公司網路";
-      } else if (!r.company || r.company === "" || r.company === "一般打卡") {
-          // 如果原本是空值或一般打卡，可根據您後端是否有存 IP 來判斷，或者預設轉為「異地打卡」
-          networkText = "異地打卡"; 
-      } else {
-          networkText = r.company; // 如果有特定公司名稱則直接顯示
-      }
-
-      const makeupBadge = r.isMakeup ? `<span class="badge-makeup">待審核</span>` : "";
-      
-      return `
-        <div class="record-item" style="border-left-color: ${color};">
-          <div class="record-info">
-            <div class="record-status">${r.status} ${makeupBadge}</div>
-            <div class="record-details">${networkText}</div>
-          </div>
-          <div class="record-time" style="color: ${color};">${time}</div>
-        </div>
-      `;
-    }).join("");
-
-    todayRecords.innerHTML = recordsHTML;
-  } catch (err) {
-    console.error(err);
-    todayRecords.innerHTML = `<div class="records-empty" style="color: #e74c3c;">今日打卡紀錄讀取失敗</div>`;
-  }
 }
 
 function refreshTodayRecords() {
