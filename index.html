@@ -353,8 +353,9 @@ button:not(:disabled):active {
 </div>
  
 <script>
-const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbwgcKd12bbLg-IJEup_QP7ObCyAJ_f1XHbhNeqVBYXj47Fk6dbzRg4AImKXx64230S75g/exec";
+const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbzDOT_uMew8j75QoLGfEVOl99q5ZpYTdvr284KxOScQ8dkUx_z7bzeBcDc-B8wXOY9mSg/exec";
 const COMPANY_IPS  = ["60.248.152.159"];
+
 const MANAGERS = [
     "U76174e2a9654ab2c7b1f037b28cb6c86", "U7fdf4fbd467b9a93a23fac01ed03351b"
 ];
@@ -417,7 +418,7 @@ function fixTimeFormat(t) {
 
 // ====== 主要：極速取得使用者資訊 + IP ======
 async function updateUserInfo() {
-    const liffInit = liff.init({ liffId: "2009435359-2rSzV0kR" });
+    const liffInit = liff.init({ liffId: "2009435359-2rSzV0Kr" });
     const [_, ip] = await Promise.all([
         liffInit,
         getIP()
@@ -556,24 +557,19 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     const ip = await getIP();
 
     Swal.fire({
-        title: isMakeup ? "補打卡中..." : `${status}打卡中...`,
         html: `
-            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding-top:8px;">
-                <div style="width:52px; height:52px; border:5px solid #e8edf2; border-top:5px solid #3498db; border-radius:50%; animation:clockSpin 0.7s linear infinite;"></div>
-                <div style="margin-top:16px; font-size:14px; color:#7f8c8d;">正在確認打卡資料...</div>
+            <div style="padding: 15px 0; text-align: center;">
+                <div style="width: 50px; height: 50px; margin: 0 auto 18px auto; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                <h3 style="margin: 0 0 8px 0; color: #2c3e50; font-size: 20px; font-weight: bold;">打卡中</h3>
+                <p style="margin: 0; color: #7f8c8d; font-size: 14px;">正在確認打卡資料...</p>
+                <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
             </div>
-            <style>
-                @keyframes clockSpin {
-                    from { transform:rotate(0deg); }
-                    to { transform:rotate(360deg); }
-                }
-            </style>
         `,
-        allowOutsideClick: false,
+        showConfirmButton: false, 
+        allowOutsideClick: false, 
         allowEscapeKey: false,
-        showConfirmButton: false,
-        backdrop: "rgba(0,0,0,0.45)",
-        customClass: { popup: "custom-swal-popup" }
+        backdrop: "rgba(0,0,0,0.5)",
+        customClass: { popup: 'custom-swal-popup' }
     });
 
     let apiData = null;
