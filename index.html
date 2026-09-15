@@ -353,16 +353,9 @@ button:not(:disabled):active {
 </div>
  
 <script>
-const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbzpFrK5lKaT5im4-iVVnyTki4JVMN620v44ovUe_3HAiwKWXaHg1pwk1gMaCNQoXzKRsw/exec";
-const COMPANY_IPS = [
-    "220.132.124.179",
-    "125.228.248.110",
-    "114.34.128.159",
-    "220.134.230.241",
-    "27.240.177.116",
-    "114.32.2.171",
-    "114.34.203.176"
-];
+// ===== 設定 =====
+const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbz8c6zX4ULAnn6KphQiTe8EqRrpdQbp17R1npo2IKCgmiBgMHOWPA7MKvPv4nChsobNKQ/exec";
+const COMPANY_IPS  = ["60.248.152.159"];
 
 
 const MANAGERS = [
@@ -427,7 +420,7 @@ function fixTimeFormat(t) {
 
 // ====== 主要：極速取得使用者資訊 + IP ======
 async function updateUserInfo() {
-    const liffInit = liff.init({ liffId: "2009435359-2rSzV0Kr" });
+    const liffInit = liff.init({ liffId: "2009435359-2rSzV0kR" });
     const [_, ip] = await Promise.all([
         liffInit,
         getIP()
@@ -513,39 +506,56 @@ function refreshTodayRecords() {
     updateTodayRecords();
 }
 
-/* ===== 打卡後發送 Flex Message 給自己 ===== */
+/* ===== 優化後的打卡後發送 Flex Message 給自己 ===== */
 async function sendSelfMessage(record) {
-    if (!liff.isInClient()) return;
+    // 1. 檢查是否在 LINE 內執行，若否則跳出提示或略過
+    if (!liff.isInClient()) {
+        console.warn("目前不在 LINE App 內，無法自動發送聊天訊息");
+        return;
+    }
+
     let headerColor = "#3498db"; 
     if (record.status === "下班") headerColor = "#2ecc71";
     if (record.networkStatus !== "公司網路") headerColor = "#e67e22";
     let reasonText = record.networkStatus !== "公司網路" ? "異常原因：非公司網路" : ""; 
 
     try {
-        await liff.sendMessages([{
+        // 2. 確保傳送內容欄位皆為字串，避免型態錯誤導致 API 拒絕
+        const response = await liff.sendMessages([{
             type: 'flex',
-            altText: '打卡通知',
+            altText: `【打卡通知】${record.status}成功`,
             contents: {
                 type: "bubble",
                 header: {
-                    type: "box", layout: "vertical",
-                    contents: [{ type: "text", text: `${record.userName} 已打卡`, weight: "bold", size: "lg", color: "#ffffff" }],
-                    backgroundColor: headerColor, paddingAll: "12px"
+                    type: "box", 
+                    layout: "vertical",
+                    contents: [{ 
+                        type: "text", 
+                        text: `${String(record.userName)} 已打卡`, 
+                        weight: "bold", 
+                        size: "lg", 
+                        color: "#ffffff" 
+                    }],
+                    backgroundColor: headerColor, 
+                    paddingAll: "12px"
                 },
                 body: {
-                    type: "box", layout: "vertical", spacing: "md",
+                    type: "box", 
+                    layout: "vertical", 
+                    spacing: "md",
                     contents: [
-                        { type: "text", text: `狀態：${record.status}`, size: "md" },
-                        { type: "text", text: `時間：${record.date} ${record.time}`, size: "md" },
-                        { type: "text", text: `網路：${record.networkStatus}`, size: "md" },
+                        { type: "text", text: `狀態：${String(record.status)}`, size: "md" },
+                        { type: "text", text: `時間：${String(record.date)} ${String(record.time)}`, size: "md" },
+                        { type: "text", text: `網路：${String(record.networkStatus)}`, size: "md" },
                         ...(reasonText ? [{ type: "text", text: reasonText, size: "md", color: "#e67e22" }] : [])
                     ]
                 }
             }
         }]);
-        await new Promise(r => setTimeout(r, 800));
-    } catch(err) {
-        console.error("LIFF 訊息傳送失敗:", err);
+        console.log("LIFF 訊息傳送成功", response);
+    } catch (err) {
+        // 3. 詳細印出錯誤訊息，方便在開發者工具（console）中偵錯
+        console.error("LIFF 訊息傳送失敗詳細原因:", err.code, err.message, err);
     }
 }
 
@@ -656,6 +666,7 @@ window.onload = async () => {
 
 </body>
 </html>
+
 
 
 
