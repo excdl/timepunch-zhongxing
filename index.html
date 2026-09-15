@@ -559,7 +559,7 @@ async function sendSelfMessage(record) {
     }
 }
 
-// ===== 打卡函式 =====
+// ===== 打卡函式 (已優化轉圈過長問題) =====
 async function performClockIn(status, customDate = "", customTime = "", isMakeup = false) {
     if (!window.userReady) {
         Swal.fire({ 
@@ -607,13 +607,18 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
         const isCompany = COMPANY_IPS.includes(ip);
         const networkStatusStr = isCompany ? "公司網路" : "非公司網路";
         
-        await sendSelfMessage({
+        // 【關鍵優化】把傳送 LIFF 訊息改為背景非同步發送（拿掉 await），
+        // 或者是加上 1.5 秒逾時保護，不讓 LINE 的 API 拖慢整體打卡畫面流暢度
+        const sendMsgPromise = sendSelfMessage({
             userName: window.userName,
             status: status,
             date: apiData.date,
             time: apiData.time,
             networkStatus: networkStatusStr
         });
+        
+        const timeoutPromise = new Promise(resolve => setTimeout(resolve, 1500));
+        await Promise.race([sendMsgPromise, timeoutPromise]);
 
         if (isCompany) {
             Swal.fire({
@@ -659,6 +664,10 @@ document.getElementById("btnApprove").onclick = () => {
 
 // ===== 初始化 =====
 window.onload = async () => {
+    // 1. 先偷偷發送一個 ping 請求來預熱 GAS 伺服器（解決冷啟動延遲）
+    fetch(`${API_ENDPOINT}?action=ping`).catch(() => {});
+
+    // 2. 接著執行原本的載入邏輯
     await updateUserInfo();
     await updateTodayRecords();
 };
@@ -666,17 +675,4 @@ window.onload = async () => {
 
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
 
