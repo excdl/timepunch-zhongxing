@@ -684,6 +684,7 @@ function showClockLoading(status, isMakeup) {
 }
 
 // ===== 打卡函式（採用樂觀更新，零延遲秒開） =====
+// ===== 打卡函式（採用樂觀更新，零延遲秒開） =====
 async function performClockIn(status, customDate = "", customTime = "", isMakeup = false) {
     if (!window.userReady && !isMakeup) {
         Swal.fire({ 
@@ -698,20 +699,11 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     }
 
     const ip = await preloadIP();
+    const isCompanyIP = COMPANY_IPS.includes(ip);
 
-    if (!isMakeup && !COMPANY_IPS.includes(ip) && !window.allowRemote) {
-        Swal.fire({
-            icon: "error",
-            title: "打卡失敗",
-            html: `<span style="color:#e74c3c; font-weight:bold;">非公司網路且未授權異地打卡！</span>`,
-            confirmButtonText: "確定",
-            customClass: { popup: 'custom-swal-popup' }
-        });
-        return;
-    }
-
+    // 因為異地打卡已開放，此處不再用 return 阻擋，而是直接取得 GPS 定位（若非公司網路）
     let lat = "", lng = "";
-    if (window.allowRemote && !COMPANY_IPS.includes(ip)) {
+    if (!isCompanyIP) {
         const geo = await getGeoLocation();
         lat = geo.lat;
         lng = geo.lng;
@@ -725,16 +717,15 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     // 1. 顯示「打卡中」彈窗
     showClockLoading(status, isMakeup);
 
-    // 模擬短暫過渡或直接進行非同步操作
     await new Promise(r => setTimeout(r, 600));
 
-    // 2. 樂觀更新：彈出成功視窗
+    // 2. 樂觀更新：彈出成功視窗（可依公司/異地顯示不同標題或提示）
     const successDate = fallbackDate;
     const successTime = fallbackTime;
 
     Swal.fire({
-        icon: "success",
-        title: isMakeup ? "🎉 補打卡成功！" : "🎉 打卡成功！",
+        icon: isCompanyIP ? "success" : "warning",
+        title: isCompanyIP ? (isMakeup ? "🎉 補打卡成功！" : "🎉 打卡成功！") : "⚠ 異地打卡成功",
         html: `<div style="font-size: 16px; margin-top: 8px;"><strong>打卡時間：</strong><br><span style="color: #2980b9; font-size: 18px; font-weight: bold;">${successDate} ${successTime}</span></div>`,
         showConfirmButton: false, 
         timer: 1600, 
@@ -742,7 +733,7 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
         customClass: { popup: 'custom-swal-popup' }
     });
 
-    // 3. 立即將紀錄插入前端畫面與快取
+    // 3. 立即將紀錄插入前端畫面與快取（正確帶入當下 IP，讓畫面即時呈現「異地打卡」）
     appendOptimisticRecord({
         status: status,
         time: successTime,
@@ -763,7 +754,7 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
                 status: status,
                 date: apiData?.date || successDate,
                 time: apiData?.time || successTime,
-                netType: window.allowRemote ? "異地打卡(GPS)" : "公司網路"
+                netType: isCompanyIP ? "公司網路" : "異地打卡(GPS)"
             });
         } catch (e) {}
 
