@@ -543,6 +543,9 @@ const btnEnd =
 const todayRecords =
     document.getElementById("todayRecords");
 
+const btnApprove =
+    document.getElementById("btnApprove");
+
 
 // ======================================================
 // 全域狀態
@@ -565,11 +568,14 @@ function updateDateTime() {
 
     const now = new Date();
 
+
     document.getElementById("timeHour").textContent =
         String(now.getHours()).padStart(2, "0");
 
+
     document.getElementById("timeMin").textContent =
         String(now.getMinutes()).padStart(2, "0");
+
 
     document.getElementById("timeSec").textContent =
         String(now.getSeconds()).padStart(2, "0");
@@ -600,29 +606,33 @@ function updateDateTime() {
 }
 
 
-setInterval(updateDateTime, 1000);
+setInterval(
+    updateDateTime,
+    1000
+);
+
 
 updateDateTime();
 
 
 // ======================================================
-// 今日日期
+// 取得今日日期
 // ======================================================
 
 function getTodayString() {
 
     const now = new Date();
 
-    return now
-        .toLocaleDateString(
-            "zh-TW",
-            {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit"
-            }
-        )
-        .replace(/\//g, "/");
+
+    return now.toLocaleDateString(
+        "zh-TW",
+        {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }
+    );
+
 }
 
 
@@ -632,13 +642,24 @@ function getTodayString() {
 
 async function getIP() {
 
+    // --------------------------------------------------
+    // 優先使用 sessionStorage
+    // --------------------------------------------------
+
     const cache =
         sessionStorage.getItem("myIP");
 
+
     if (cache) {
+
         return cache;
+
     }
 
+
+    // --------------------------------------------------
+    // 第一次才查詢外部 IP
+    // --------------------------------------------------
 
     try {
 
@@ -648,17 +669,34 @@ async function getIP() {
             );
 
 
+        if (!res.ok) {
+
+            throw new Error(
+                `IP API HTTP ${res.status}`
+            );
+
+        }
+
+
         const data =
             await res.json();
 
 
-        sessionStorage.setItem(
-            "myIP",
-            data.ip
-        );
+        if (data && data.ip) {
+
+            sessionStorage.setItem(
+                "myIP",
+                data.ip
+            );
 
 
-        return data.ip;
+            return data.ip;
+
+        }
+
+
+        return "";
+
 
     } catch (err) {
 
@@ -667,8 +705,11 @@ async function getIP() {
             err
         );
 
+
         return "";
+
     }
+
 }
 
 
@@ -683,7 +724,9 @@ function fixTimeFormat(t) {
         t.includes(":") &&
         !t.includes("T")
     ) {
+
         return t;
+
     }
 
 
@@ -699,6 +742,7 @@ function fixTimeFormat(t) {
                     hour12: false
                 }
             );
+
     }
 
 
@@ -718,28 +762,33 @@ function fixTimeFormat(t) {
                 hour12: false
             }
         );
+
     }
 
 
-    return t;
+    return t || "";
+
 }
 
 
 // ======================================================
-// 使用者初始化
+// 使用者資訊
+//
+// ★ 只負責打卡必要資料
+// ★ 不等待今日紀錄
 // ======================================================
 
 async function updateUserInfo() {
 
     try {
 
-        // ----------------------------------------------
-        // LIFF + IP 同時執行
-        // ----------------------------------------------
+        // ------------------------------------------------
+        // LIFF 初始化 + IP 同時執行
+        // ------------------------------------------------
 
         const [
-            _,
-            ip
+            _liff,
+            initialIP
         ] = await Promise.all([
 
             liff.init({
@@ -751,21 +800,28 @@ async function updateUserInfo() {
         ]);
 
 
-        // ----------------------------------------------
-        // 未登入
-        // ----------------------------------------------
+        console.log(
+            "LIFF 初始化完成",
+            initialIP
+        );
+
+
+        // ------------------------------------------------
+        // 尚未登入
+        // ------------------------------------------------
 
         if (!liff.isLoggedIn()) {
 
             await liff.login();
 
             return;
+
         }
 
 
-        // ----------------------------------------------
-        // Profile + IP
-        // ----------------------------------------------
+        // ------------------------------------------------
+        // 取得 LINE Profile + IP
+        // ------------------------------------------------
 
         const [
             profile,
@@ -779,24 +835,34 @@ async function updateUserInfo() {
         ]);
 
 
+        // ------------------------------------------------
+        // 儲存使用者資訊
+        // ------------------------------------------------
+
         window.userId =
             profile.userId;
+
 
         window.userName =
             profile.displayName;
 
 
+        // ------------------------------------------------
+        // 顯示名稱
+        // ------------------------------------------------
+
         userInfo.textContent =
             `${window.userName} 您好`;
 
 
-        // ----------------------------------------------
-        // 頭像
-        // ----------------------------------------------
+        // ------------------------------------------------
+        // 顯示頭像
+        // ------------------------------------------------
 
         if (profile.pictureUrl) {
 
             userAvatar.innerHTML = `
+
                 <img
                     src="${profile.pictureUrl}"
                     alt="avatar"
@@ -807,33 +873,46 @@ async function updateUserInfo() {
                         object-fit:cover;
                     "
                 >
+
             `;
 
         } else if (window.userName) {
 
             userAvatar.textContent =
                 window.userName.charAt(0);
+
         }
 
 
-        // ----------------------------------------------
-        // 主管按鈕
-        // ----------------------------------------------
+        // ------------------------------------------------
+        // 主管權限
+        // ------------------------------------------------
 
-        document
-            .getElementById("btnApprove")
-            .style.display =
-                MANAGERS.includes(window.userId)
-                    ? "block"
-                    : "none";
+        if (
+            MANAGERS.includes(
+                window.userId
+            )
+        ) {
+
+            btnApprove.style.display =
+                "block";
+
+        } else {
+
+            btnApprove.style.display =
+                "none";
+
+        }
 
 
-        // ----------------------------------------------
-        // 公司 IP
-        // ----------------------------------------------
+        // ------------------------------------------------
+        // 網路狀態
+        // ------------------------------------------------
 
         const isCompany =
-            COMPANY_IPS.includes(finalIP);
+            COMPANY_IPS.includes(
+                finalIP
+            );
 
 
         statusInfo.textContent =
@@ -849,29 +928,49 @@ async function updateUserInfo() {
 
 
         // =================================================
-        // ★ 最重要
-        // 使用者資料完成後立即開放打卡
+        // ★★★ 核心 ★★★
+        //
+        // 使用者資料完成後
+        // 立即開放打卡
         //
         // 不等待今日紀錄
         // =================================================
 
-        btnStart.disabled = false;
-        btnEnd.disabled = false;
+        window.userReady =
+            true;
 
-        window.userReady = true;
+
+        btnStart.disabled =
+            false;
+
+
+        btnEnd.disabled =
+            false;
 
 
         console.log(
-            "使用者資料完成，打卡功能已啟用"
+            "使用者初始化完成，打卡功能已啟用"
         );
 
 
     } catch (err) {
 
         console.error(
-            "使用者初始化失敗:",
+            "updateUserInfo 錯誤:",
             err
         );
+
+
+        window.userReady =
+            false;
+
+
+        btnStart.disabled =
+            true;
+
+
+        btnEnd.disabled =
+            true;
 
 
         Swal.fire({
@@ -880,30 +979,37 @@ async function updateUserInfo() {
 
             title: "初始化失敗",
 
-            text: "請重新整理頁面後再試一次",
+            text:
+                "LINE 使用者資料載入失敗，請重新整理頁面後再試一次。",
 
-            confirmButtonText: "確定",
+            confirmButtonText:
+                "確定",
 
             customClass: {
-                popup: "custom-swal-popup"
+                popup:
+                    "custom-swal-popup"
             }
 
         });
 
     }
+
 }
 
 
 // ======================================================
-// 取得今日紀錄
+// 今日打卡紀錄
 //
-// ★ 此函式現在完全不阻塞打卡
+// ★ 完全獨立
+// ★ 不阻塞打卡
 // ======================================================
 
 async function updateTodayRecords() {
 
     if (!window.userId) {
+
         return;
+
     }
 
 
@@ -915,11 +1021,17 @@ async function updateTodayRecords() {
 
         const res =
             await fetch(
-                `${API_ENDPOINT}?action=getToday&userId=${encodeURIComponent(window.userId)}&date=${encodeURIComponent(today)}`,
+
+                `${API_ENDPOINT}` +
+                `?action=getToday` +
+                `&userId=${encodeURIComponent(window.userId)}` +
+                `&date=${encodeURIComponent(today)}`,
+
                 {
                     method: "GET",
                     cache: "no-store"
                 }
+
             );
 
 
@@ -928,6 +1040,7 @@ async function updateTodayRecords() {
             throw new Error(
                 `HTTP ${res.status}`
             );
+
         }
 
 
@@ -935,92 +1048,132 @@ async function updateTodayRecords() {
             await res.json();
 
 
-        if (!data || !data.length) {
+        // ------------------------------------------------
+        // 沒有紀錄
+        // ------------------------------------------------
+
+        if (
+            !data ||
+            !Array.isArray(data) ||
+            data.length === 0
+        ) {
 
             todayRecords.innerHTML = `
+
                 <div class="records-empty">
                     今日尚無打卡紀錄
                 </div>
+
             `;
 
             return;
+
         }
 
 
+        // ------------------------------------------------
+        // 建立紀錄 HTML
+        // ------------------------------------------------
+
         const recordsHTML =
-            data.map(r => {
+            data.map(
+                r => {
 
-                const color =
-                    r.status === "下班"
-                        ? "#2ecc71"
-                        : "#3498db";
-
-
-                const time =
-                    fixTimeFormat(r.time);
+                    const color =
+                        r.status === "下班"
+                            ? "#2ecc71"
+                            : "#3498db";
 
 
-                const networkLabel =
-                    COMPANY_IPS.includes(r.ip)
-                        ? "公司網路"
-                        : "異地打卡";
+                    const time =
+                        fixTimeFormat(
+                            r.time
+                        );
 
 
-                const networkColor =
-                    COMPANY_IPS.includes(r.ip)
-                        ? "#7f8c8d"
-                        : "#e67e22";
+                    const isCompany =
+                        COMPANY_IPS.includes(
+                            r.ip
+                        );
 
 
-                const makeupBadge =
-                    r.isMakeup
-                        ? `<span class="badge-makeup">待審核</span>`
-                        : "";
+                    const networkLabel =
+                        isCompany
+                            ? "公司網路"
+                            : "異地打卡";
 
 
-                return `
+                    const networkColor =
+                        isCompany
+                            ? "#7f8c8d"
+                            : "#e67e22";
 
-                    <div
-                        class="record-item"
-                        style="border-left-color:${color};"
-                    >
 
-                        <div class="record-info">
+                    const makeupBadge =
+                        r.isMakeup
+                            ? `
+                                <span
+                                    class="badge-makeup"
+                                >
+                                    待審核
+                                </span>
+                              `
+                            : "";
 
-                            <div class="record-status">
 
-                                ${r.status}
-
-                                ${makeupBadge}
-
-                            </div>
-
-                            <div
-                                class="record-details"
-                                style="color:${networkColor};"
-                            >
-
-                                ${networkLabel}
-
-                            </div>
-
-                        </div>
-
+                    return `
 
                         <div
-                            class="record-time"
-                            style="color:${color};"
+                            class="record-item"
+                            style="
+                                border-left-color:${color};
+                            "
                         >
 
-                            ${time}
+                            <div class="record-info">
+
+                                <div
+                                    class="record-status"
+                                >
+
+                                    ${r.status}
+
+                                    ${makeupBadge}
+
+                                </div>
+
+
+                                <div
+                                    class="record-details"
+                                    style="
+                                        color:${networkColor};
+                                    "
+                                >
+
+                                    ${networkLabel}
+
+                                </div>
+
+                            </div>
+
+
+                            <div
+                                class="record-time"
+                                style="
+                                    color:${color};
+                                "
+                            >
+
+                                ${time}
+
+                            </div>
 
                         </div>
 
-                    </div>
+                    `;
 
-                `;
-
-            }).join("");
+                }
+            ).join("");
 
 
         todayRecords.innerHTML =
@@ -1035,17 +1188,27 @@ async function updateTodayRecords() {
         );
 
 
+        // ------------------------------------------------
+        // 今日紀錄失敗
+        //
+        // ★ 不影響打卡
+        // ------------------------------------------------
+
         todayRecords.innerHTML = `
 
             <div
                 class="records-empty"
                 style="color:#e67e22;"
             >
+
                 今日紀錄暫時無法載入
+
             </div>
 
         `;
+
     }
+
 }
 
 
@@ -1061,30 +1224,46 @@ function refreshTodayRecords() {
         );
 
 
-    container.classList.add(
-        "bounce"
-    );
+    if (container) {
 
-
-    setTimeout(() => {
-
-        container.classList.remove(
+        container.classList.add(
             "bounce"
         );
 
-    }, 400);
+
+        setTimeout(
+            () => {
+
+                container.classList.remove(
+                    "bounce"
+                );
+
+            },
+            400
+        );
+
+    }
 
 
-    // ★ 不等待
+    // ★ 不 await
+
     updateTodayRecords();
+
 }
 
 
 // ======================================================
 // LINE Flex Message
+//
+// ★ 背景執行
+// ★ 不影響打卡結果
 // ======================================================
 
 async function sendSelfMessage(record) {
+
+    // --------------------------------------------------
+    // 不在 LINE App
+    // --------------------------------------------------
 
     if (!liff.isInClient()) {
 
@@ -1093,6 +1272,7 @@ async function sendSelfMessage(record) {
         );
 
         return;
+
     }
 
 
@@ -1100,17 +1280,23 @@ async function sendSelfMessage(record) {
         "#3498db";
 
 
-    if (record.status === "下班") {
+    if (
+        record.status === "下班"
+    ) {
 
         headerColor =
             "#2ecc71";
+
     }
 
 
-    if (record.networkStatus !== "公司網路") {
+    if (
+        record.networkStatus !== "公司網路"
+    ) {
 
         headerColor =
             "#e67e22";
+
     }
 
 
@@ -1136,6 +1322,7 @@ async function sendSelfMessage(record) {
 
                         type: "bubble",
 
+
                         header: {
 
                             type: "box",
@@ -1151,11 +1338,14 @@ async function sendSelfMessage(record) {
                                     text:
                                         `${String(record.userName)} 已打卡`,
 
-                                    weight: "bold",
+                                    weight:
+                                        "bold",
 
-                                    size: "lg",
+                                    size:
+                                        "lg",
 
-                                    color: "#ffffff"
+                                    color:
+                                        "#ffffff"
 
                                 }
 
@@ -1166,51 +1356,64 @@ async function sendSelfMessage(record) {
 
                             paddingAll:
                                 "12px"
+
                         },
 
 
                         body: {
 
-                            type: "box",
+                            type:
+                                "box",
 
-                            layout: "vertical",
+                            layout:
+                                "vertical",
 
-                            spacing: "md",
+                            spacing:
+                                "md",
 
                             contents: [
 
                                 {
 
-                                    type: "text",
+                                    type:
+                                        "text",
 
                                     text:
                                         `狀態：${String(record.status)}`,
 
-                                    size: "md"
+                                    size:
+                                        "md"
 
                                 },
 
+
                                 {
 
-                                    type: "text",
+                                    type:
+                                        "text",
 
                                     text:
                                         `時間：${String(record.date)} ${String(record.time)}`,
 
-                                    size: "md"
+                                    size:
+                                        "md"
 
                                 },
 
+
                                 {
 
-                                    type: "text",
+                                    type:
+                                        "text",
 
                                     text:
                                         `網路：${String(record.networkStatus)}`,
 
-                                    size: "md"
+                                    size:
+                                        "md"
 
                                 },
+
 
                                 ...(reasonText
 
@@ -1218,12 +1421,14 @@ async function sendSelfMessage(record) {
 
                                         {
 
-                                            type: "text",
+                                            type:
+                                                "text",
 
                                             text:
                                                 reasonText,
 
-                                            size: "md",
+                                            size:
+                                                "md",
 
                                             color:
                                                 "#e67e22"
@@ -1235,15 +1440,18 @@ async function sendSelfMessage(record) {
                                     : [])
 
                             ]
+
                         }
+
                     }
+
                 }
 
             ]);
 
 
         console.log(
-            "LIFF 訊息傳送成功:",
+            "LINE Flex Message 傳送成功:",
             response
         );
 
@@ -1251,304 +1459,186 @@ async function sendSelfMessage(record) {
     } catch (err) {
 
         console.error(
-            "LIFF 訊息傳送失敗:",
+            "LINE Flex Message 傳送失敗:",
             err.code,
             err.message,
             err
         );
+
     }
+
 }
 
 
 // ======================================================
-// 倒數動畫
+// 顯示「打卡中」彈窗
 //
-// ★ 動畫只負責動畫
-// ★ 不負責決定 API 是否完成
+// ★ 按鈕按下後立即顯示
 // ======================================================
 
-function startCountdownAnimation(
+function showClockLoading(
     status,
     isMakeup
 ) {
 
-    return new Promise(resolve => {
+    Swal.fire({
 
-        const wrapper =
-            document.getElementById(
-                "countdownWrapper"
-            );
-
-
-        const circle =
-            document.getElementById(
-                "circleProgress"
-            );
-
-
-        const text =
-            document.getElementById(
-                "countdownText"
-            );
-
-
-        if (!wrapper || !circle || !text) {
-
-            resolve();
-
-            return;
-        }
-
-
-        wrapper.style.display =
-            "flex";
-
-        wrapper.style.opacity =
-            "1";
-
-        wrapper.style.transition =
-            "none";
-
-
-        text.textContent =
+        title:
             isMakeup
                 ? "補打卡中..."
-                : "打卡中...";
+                : `${status}打卡中...`,
+
+        html: `
+
+            <div
+                style="
+                    display:flex;
+                    flex-direction:column;
+                    align-items:center;
+                    justify-content:center;
+                    padding-top:8px;
+                "
+            >
+
+                <div
+                    style="
+                        width:52px;
+                        height:52px;
+                        border:5px solid #e8edf2;
+                        border-top:5px solid #3498db;
+                        border-radius:50%;
+                        animation:clockSpin 0.7s linear infinite;
+                    "
+                ></div>
 
 
-        const colors = {
+                <div
+                    style="
+                        margin-top:16px;
+                        font-size:14px;
+                        color:#7f8c8d;
+                    "
+                >
 
-            上班: {
+                    正在確認打卡資料...
 
-                start: {
-                    r: 52,
-                    g: 152,
-                    b: 219
-                },
+                </div>
 
-                end: {
-                    r: 41,
-                    g: 128,
-                    b: 185
+            </div>
+
+
+            <style>
+
+                @keyframes clockSpin {
+
+                    from {
+                        transform:rotate(0deg);
+                    }
+
+                    to {
+                        transform:rotate(360deg);
+                    }
+
                 }
 
-            },
+            </style>
 
+        `,
 
-            下班: {
+        allowOutsideClick:
+            false,
 
-                start: {
-                    r: 46,
-                    g: 204,
-                    b: 113
-                },
+        allowEscapeKey:
+            false,
 
-                end: {
-                    r: 39,
-                    g: 174,
-                    b: 96
-                }
+        showConfirmButton:
+            false,
 
-            },
+        backdrop:
+            "rgba(0,0,0,0.45)",
 
+        customClass: {
 
-            補打卡: {
+            popup:
+                "custom-swal-popup"
 
-                start: {
-                    r: 243,
-                    g: 156,
-                    b: 18
-                },
-
-                end: {
-                    r: 243,
-                    g: 156,
-                    b: 18
-                }
-
-            }
-
-        };
-
-
-        const {
-            start: startColor,
-            end: endColor
-        } =
-            isMakeup
-                ? colors.補打卡
-                : (
-                    colors[status] ||
-                    colors.上班
-                );
-
-
-        const radius =
-            50;
-
-
-        const circumference =
-            2 * Math.PI * radius;
-
-
-        circle.style.strokeDasharray =
-            circumference;
-
-
-        circle.style.strokeDashoffset =
-            circumference;
-
-
-        circle.style.stroke =
-            `rgb(
-                ${startColor.r},
-                ${startColor.g},
-                ${startColor.b}
-            )`;
-
-
-        let progress =
-            0;
-
-
-        function animate() {
-
-            progress =
-                Math.min(
-                    progress + 0.015,
-                    1
-                );
-
-
-            circle.style.strokeDashoffset =
-                circumference *
-                (1 - progress);
-
-
-            const rC =
-                Math.round(
-                    startColor.r *
-                    (1 - progress) +
-                    endColor.r *
-                    progress
-                );
-
-
-            const gC =
-                Math.round(
-                    startColor.g *
-                    (1 - progress) +
-                    endColor.g *
-                    progress
-                );
-
-
-            const bC =
-                Math.round(
-                    startColor.b *
-                    (1 - progress) +
-                    endColor.b *
-                    progress
-                );
-
-
-            circle.style.stroke =
-                `rgb(${rC},${gC},${bC})`;
-
-
-            if (progress < 1) {
-
-                requestAnimationFrame(
-                    animate
-                );
-
-            } else {
-
-                // 動畫跑完
-                // 不在這裡關閉遮罩
-                resolve();
-
-            }
         }
 
-
-        requestAnimationFrame(
-            animate
-        );
-
     });
+
 }
 
 
 // ======================================================
-// 關閉倒數
+// 顯示成功結果
 // ======================================================
 
-function hideCountdown() {
-
-    const wrapper =
-        document.getElementById(
-            "countdownWrapper"
-        );
-
-
-    if (!wrapper) {
-        return;
-    }
-
-
-    wrapper.style.transition =
-        "opacity 0.25s";
-
-
-    wrapper.style.opacity =
-        "0";
-
-
-    setTimeout(() => {
-
-        wrapper.style.display =
-            "none";
-
-        wrapper.style.opacity =
-            "1";
-
-    }, 250);
-}
-
-
-// ======================================================
-// 打卡
-// ======================================================
-
-async function performClockIn(
+function showClockSuccess(
+    apiData,
     status,
-    customDate = "",
-    customTime = "",
-    isMakeup = false
+    isMakeup,
+    isCompany
 ) {
 
-    // --------------------------------------------------
-    // 使用者資料還沒準備好
-    // --------------------------------------------------
-
-    if (!window.userReady) {
+    if (isCompany) {
 
         Swal.fire({
 
-            icon: "info",
+            icon:
+                "success",
 
-            title: "請稍候",
+            title:
+                isMakeup
+                    ? "🎉 補打卡成功！"
+                    : "🎉 打卡成功！",
 
-            html:
-                "使用者資料尚未載入",
+            html: `
 
-            timer: 1500,
+                <div
+                    style="
+                        font-size:16px;
+                        margin-top:8px;
+                    "
+                >
 
-            showConfirmButton: false,
+                    <strong>
+                        打卡時間：
+                    </strong>
+
+                    <br>
+
+                    <span
+                        style="
+                            color:#2980b9;
+                            font-size:20px;
+                            font-weight:bold;
+                            line-height:2;
+                        "
+                    >
+
+                        ${apiData.date}
+                        ${apiData.time}
+
+                    </span>
+
+                </div>
+
+            `,
+
+            showConfirmButton:
+                false,
+
+            timer:
+                1800,
+
+            backdrop:
+                "rgba(0,0,0,0.5)",
 
             customClass: {
-                popup: "custom-swal-popup"
+
+                popup:
+                    "custom-swal-popup"
+
             }
 
         });
@@ -1558,18 +1648,232 @@ async function performClockIn(
 
 
     // --------------------------------------------------
-    // 防止重複打卡
+    // 非公司網路
     // --------------------------------------------------
 
-    if (window.clockProcessing) {
+    Swal.fire({
+
+        icon:
+            "warning",
+
+        title:
+            "⚠ 非公司網路",
+
+        html: `
+
+            <div
+                style="
+                    font-size:16px;
+                    color:#3498db;
+                    font-weight:bold;
+                    margin-top:8px;
+                "
+            >
+
+                ◎ 異地打卡成功 ◎
+
+            </div>
+
+
+            <br>
+
+
+            <small>
+
+                打卡時間：
+                ${apiData.date}
+                ${apiData.time}
+
+            </small>
+
+        `,
+
+        showConfirmButton:
+            false,
+
+        timer:
+            2200,
+
+        backdrop:
+            "rgba(0,0,0,0.5)",
+
+        customClass: {
+
+            popup:
+                "custom-swal-popup"
+
+        }
+
+    });
+
+}
+
+
+// ======================================================
+// 顯示失敗
+// ======================================================
+
+function showClockError(
+    message
+) {
+
+    Swal.fire({
+
+        icon:
+            "error",
+
+        title:
+            "打卡失敗",
+
+        text:
+            message ||
+            "請檢查網路連線或重新整理頁面試試看！",
+
+        confirmButtonText:
+            "確定",
+
+        customClass: {
+
+            popup:
+                "custom-swal-popup"
+
+        }
+
+    });
+
+}
+
+
+// ======================================================
+// 判斷 API 是否成功
+//
+// 支援：
+//
+// { success: true }
+//
+// 或：
+//
+// { message: "打卡成功" }
+// ======================================================
+
+function isClockSuccess(
+    apiData
+) {
+
+    if (!apiData) {
+
+        return false;
+
+    }
+
+
+    if (
+        apiData.success === true
+    ) {
+
+        return true;
+
+    }
+
+
+    if (
+        apiData.message &&
+        String(apiData.message)
+            .includes("成功")
+    ) {
+
+        return true;
+
+    }
+
+
+    return false;
+
+}
+
+
+// ======================================================
+// 打卡函式
+//
+// ★★★ 核心版本 ★★★
+//
+// 按下按鈕
+// ↓
+// 立即「打卡中」
+// ↓
+// API
+// ↓
+// 立即結果
+// ↓
+// 背景刷新紀錄
+// ↓
+// 背景 LINE
+// ======================================================
+
+async function performClockIn(
+    status,
+    customDate = "",
+    customTime = "",
+    isMakeup = false
+) {
+
+    // ==================================================
+    // 使用者尚未準備完成
+    // ==================================================
+
+    if (!window.userReady) {
+
+        Swal.fire({
+
+            icon:
+                "info",
+
+            title:
+                "請稍候",
+
+            text:
+                "使用者資料尚未載入",
+
+            timer:
+                1200,
+
+            showConfirmButton:
+                false,
+
+            customClass: {
+
+                popup:
+                    "custom-swal-popup"
+
+            }
+
+        });
 
         return;
+
+    }
+
+
+    // ==================================================
+    // 防止重複點擊
+    // ==================================================
+
+    if (
+        window.clockProcessing
+    ) {
+
+        return;
+
     }
 
 
     window.clockProcessing =
         true;
 
+
+    // ==================================================
+    // 暫時鎖定按鈕
+    // ==================================================
 
     btnStart.disabled =
         true;
@@ -1578,38 +1882,43 @@ async function performClockIn(
         true;
 
 
+    // ==================================================
+    // ★★★ 第一時間顯示打卡中 ★★★
+    // ==================================================
+
+    showClockLoading(
+        status,
+        isMakeup
+    );
+
+
     try {
 
-        // =================================================
-        // IP
-        //
-        // 使用快取，通常不會再等待網路
-        // =================================================
+        // ==================================================
+        // 取得 IP
+        // ==================================================
 
         const ip =
             await getIP();
 
 
-        // =================================================
-        // 啟動動畫
-        // =================================================
-
-        const animationPromise =
-            startCountdownAnimation(
-                status,
-                isMakeup
-            );
+        console.log(
+            "打卡使用 IP:",
+            ip
+        );
 
 
-        // =================================================
-        // ★ 打卡 API
-        //
-        // 與動畫並行
-        // =================================================
+        // ==================================================
+        // API 資料
+        // ==================================================
 
         let apiData =
             null;
 
+
+        // ==================================================
+        // 發送 GAS
+        // ==================================================
 
         try {
 
@@ -1618,27 +1927,34 @@ async function performClockIn(
                     API_ENDPOINT,
                     {
 
-                        method: "POST",
+                        method:
+                            "POST",
 
-                        body: JSON.stringify({
+                        body:
+                            JSON.stringify({
 
-                            userId:
-                                window.userId,
+                                userId:
+                                    window.userId,
 
-                            displayName:
-                                window.userName,
+                                displayName:
+                                    window.userName,
 
-                            status,
+                                status:
+                                    status,
 
-                            ip,
+                                ip:
+                                    ip,
 
-                            customDate,
+                                customDate:
+                                    customDate,
 
-                            customTime,
+                                customTime:
+                                    customTime,
 
-                            isMakeup
+                                isMakeup:
+                                    isMakeup
 
-                        })
+                            })
 
                     }
                 );
@@ -1647,8 +1963,9 @@ async function performClockIn(
             if (!res.ok) {
 
                 throw new Error(
-                    `HTTP ${res.status}`
+                    `GAS HTTP ${res.status}`
                 );
+
             }
 
 
@@ -1657,72 +1974,56 @@ async function performClockIn(
 
 
             console.log(
-                "打卡 API 回應:",
+                "GAS 打卡回覆:",
                 apiData
             );
 
 
-        } catch (err) {
+        } catch (apiError) {
 
             console.error(
-                "打卡 API 錯誤:",
-                err
+                "GAS 打卡 API 錯誤:",
+                apiError
             );
 
 
             apiData = {
 
-                success: false,
+                success:
+                    false,
 
                 message:
                     "打卡伺服器連線失敗，請稍後再試。"
 
             };
+
         }
 
 
-        // =================================================
-        // 等動畫至少跑完
+        // ==================================================
+        // ★★★ API 回覆後立即處理 ★★★
         //
-        // 如果 API 比動畫快，就等動畫。
-        // 如果 API 比動畫慢，則等待 API。
-        // =================================================
+        // 不等待：
+        //
+        // ❌ 今日紀錄
+        // ❌ LINE Flex
+        // ❌ 其他流程
+        // ==================================================
 
-        await animationPromise;
+        if (
+            isClockSuccess(
+                apiData
+            )
+        ) {
 
-
-        // =================================================
-        // 關閉動畫
-        // =================================================
-
-        hideCountdown();
-
-
-        // =================================================
-        // 判斷成功
-        // =================================================
-
-        const isSuccess =
-            apiData &&
-            (
-                apiData.success === true ||
-
-                (
-                    apiData.message &&
-                    String(apiData.message)
-                        .includes("成功")
-                )
-            );
-
-
-        // =================================================
-        // 成功
-        // =================================================
-
-        if (isSuccess) {
+            // ------------------------------------------------
+            // 判斷公司網路
+            // ------------------------------------------------
 
             const isCompany =
-                COMPANY_IPS.includes(ip);
+                COMPANY_IPS.includes(
+                    ip
+                );
 
 
             const networkStatusStr =
@@ -1731,19 +2032,41 @@ async function performClockIn(
                     : "非公司網路";
 
 
-            // ------------------------------------------------
-            // Flex Message
+            // ==================================================
+            // ★★★ 立即顯示成功結果 ★★★
+            // ==================================================
+
+            showClockSuccess(
+
+                apiData,
+
+                status,
+
+                isMakeup,
+
+                isCompany
+
+            );
+
+
+            // ==================================================
+            // ★★★ 以下全部背景執行 ★★★
+            // ==================================================
+
+
+            // --------------------------------------------------
+            // LINE Flex Message
             //
-            // ★ 背景發送
-            // ★ 完全不阻塞成功提示
-            // ------------------------------------------------
+            // 不 await
+            // --------------------------------------------------
 
             sendSelfMessage({
 
                 userName:
                     window.userName,
 
-                status,
+                status:
+                    status,
 
                 date:
                     apiData.date,
@@ -1754,186 +2077,51 @@ async function performClockIn(
                 networkStatus:
                     networkStatusStr
 
-            }).catch(err => {
+            }).catch(
+                err => {
 
-                console.error(
-                    "背景發送訊息失敗:",
-                    err
-                );
+                    console.error(
+                        "背景 LINE 訊息錯誤:",
+                        err
+                    );
 
-            });
-
-
-            // ------------------------------------------------
-            // 公司網路
-            // ------------------------------------------------
-
-            if (isCompany) {
-
-                await Swal.fire({
-
-                    icon: "success",
-
-                    title:
-                        isMakeup
-                            ? "🎉 補打卡成功！"
-                            : "🎉 打卡成功！",
-
-                    html: `
-
-                        <div
-                            style="
-                                font-size:16px;
-                                margin-top:8px;
-                            "
-                        >
-
-                            <strong>
-                                打卡時間：
-                            </strong>
-
-                            <br>
-
-                            <span
-                                style="
-                                    color:#2980b9;
-                                    font-size:18px;
-                                    font-weight:bold;
-                                "
-                            >
-
-                                ${apiData.date}
-                                ${apiData.time}
-
-                            </span>
-
-                        </div>
-
-                    `,
-
-                    showConfirmButton:
-                        false,
-
-                    timer:
-                        2000,
-
-                    backdrop:
-                        "rgba(0,0,0,0.5)",
-
-                    customClass: {
-                        popup:
-                            "custom-swal-popup"
-                    }
-
-                });
+                }
+            );
 
 
-            // ------------------------------------------------
-            // 非公司網路
-            // ------------------------------------------------
-
-            } else {
-
-                await Swal.fire({
-
-                    icon:
-                        "warning",
-
-                    title:
-                        "⚠ 非公司網路",
-
-                    html: `
-
-                        <div
-                            style="
-                                font-size:16px;
-                                color:#3498db;
-                                font-weight:bold;
-                                margin-top:8px;
-                            "
-                        >
-
-                            ◎ 異地打卡成功 ◎
-
-                        </div>
-
-                        <br>
-
-                        <small>
-
-                            打卡時間：
-                            ${apiData.date}
-                            ${apiData.time}
-
-                        </small>
-
-                    `,
-
-                    showConfirmButton:
-                        false,
-
-                    timer:
-                        2500,
-
-                    backdrop:
-                        "rgba(0,0,0,0.5)",
-
-                    customClass: {
-                        popup:
-                            "custom-swal-popup"
-                    }
-
-                });
-
-            }
-
-
-            // =================================================
-            // ★ 打卡成功後
-            // ★ 背景更新今日紀錄
-            // =================================================
+            // --------------------------------------------------
+            // 今日紀錄
+            //
+            // 不 await
+            // --------------------------------------------------
 
             updateTodayRecords();
 
 
         } else {
 
-            // =================================================
+            // ==================================================
             // 打卡失敗
-            // =================================================
+            // ==================================================
 
-            Swal.fire({
+            showClockError(
 
-                icon:
-                    "error",
+                apiData?.message ||
 
-                title:
-                    "打卡失敗",
+                "請檢查網路連線或重新整理頁面試試看！"
 
-                text:
-                    apiData?.message ||
-                    "請檢查網路連線或重新整理頁面試試看！",
-
-                confirmButtonText:
-                    "確定",
-
-                customClass: {
-                    popup:
-                        "custom-swal-popup"
-                }
-
-            });
+            );
 
         }
 
 
     } catch (err) {
 
-        // =================================================
-        // 最後防線
+        // ==================================================
+        // 最後防護
         //
-        // 避免任何未預期錯誤導致「沒有任何回應」
-        // =================================================
+        // 保證任何未預期錯誤都有畫面回應
+        // ==================================================
 
         console.error(
             "performClockIn 未預期錯誤:",
@@ -1941,36 +2129,16 @@ async function performClockIn(
         );
 
 
-        hideCountdown();
+        showClockError(
+            "打卡流程發生異常，請重新整理後再試一次。"
+        );
 
-
-        Swal.fire({
-
-            icon:
-                "error",
-
-            title:
-                "系統發生錯誤",
-
-            text:
-                "打卡流程發生異常，請重新整理後再試一次。",
-
-            confirmButtonText:
-                "確定",
-
-            customClass: {
-                popup:
-                    "custom-swal-popup"
-            }
-
-        });
 
     } finally {
 
-        // =================================================
-        // ★ 無論成功或失敗
-        // ★ 都恢復按鈕
-        // =================================================
+        // ==================================================
+        // 恢復按鈕
+        // ==================================================
 
         window.clockProcessing =
             false;
@@ -1979,42 +2147,49 @@ async function performClockIn(
         btnStart.disabled =
             false;
 
+
         btnEnd.disabled =
             false;
 
     }
+
 }
 
 
 // ======================================================
-// 按鈕事件
+// 上班按鈕
 // ======================================================
 
-btnStart.onclick = () => {
+btnStart.onclick =
+    () => {
 
-    performClockIn(
-        "上班"
-    );
+        performClockIn(
+            "上班"
+        );
 
-};
+    };
 
 
-btnEnd.onclick = () => {
+// ======================================================
+// 下班按鈕
+// ======================================================
 
-    performClockIn(
-        "下班"
-    );
+btnEnd.onclick =
+    () => {
 
-};
+        performClockIn(
+            "下班"
+        );
+
+    };
 
 
 // ======================================================
 // 主管簽核
 // ======================================================
 
-document
-    .getElementById("btnApprove")
-    .onclick = () => {
+btnApprove.onclick =
+    () => {
 
         window.location.href =
             "https://script.google.com/macros/s/AKfycbyxXrvVxfgwrI-SdXM03QEYxEpG-xqyjVQcxdNz1IBK3DtFC-kUFjHhRaNtgXNU-Mdu/exec";
@@ -2025,40 +2200,53 @@ document
 // ======================================================
 // 初始化
 //
-// ★★★ 這裡是本次修改的核心 ★★★
+// ★★★ 非常重要 ★★★
 //
-// 不再：
+// 先完成使用者資料
+// ↓
+// 立即可以打卡
+// ↓
+// 今日紀錄另外背景載入
 //
-// await updateUserInfo();
+// 絕對不能寫：
+//
 // await updateTodayRecords();
 //
-// 而是：
-//
-// 1. 等使用者資料
-// 2. 立即可以打卡
-// 3. 今日紀錄背景載入
 // ======================================================
 
-window.onload = async () => {
+window.onload =
+    async () => {
 
-    // 第一階段：
-    // 只等待打卡真正需要的資料
+        console.log(
+            "系統開始初始化..."
+        );
 
-    await updateUserInfo();
+
+        // --------------------------------------------------
+        // ① 只等待打卡必要資料
+        // --------------------------------------------------
+
+        await updateUserInfo();
 
 
-    // 第二階段：
-    // 今日紀錄背景載入
-    //
-    // ★ 不使用 await
-    // ★ 不阻塞前台
-    // ★ 不影響打卡
+        // --------------------------------------------------
+        // ② 今日紀錄背景載入
+        //
+        // ★ 不 await
+        // --------------------------------------------------
 
-    updateTodayRecords();
+        updateTodayRecords();
 
-};
+
+        console.log(
+            "前台初始化完成"
+        );
+
+    };
 
 </script>
+
+
 
 </body>
 </html>
