@@ -364,7 +364,7 @@ button:not(:disabled):active {
     <button id="btnApprove">補打卡審批</button>
 </div>
 <script>
-const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbz8c6zX4ULAnn6KphQiTe8EqRrpdQbp17R1npo2IKCgmiBgMHOWPA7MKvPv4nChsobNKQ/exec";
+const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbyM3KeuxdKJOw--A8nLmmQhVulDARA-UfWlyBmlVNW2Dy8c6HvFSktk6DydmQrhEcDX/exec";
 const COMPANY_IPS  = ["60.248.152.159"];
 
 const MANAGERS = [
@@ -445,8 +445,34 @@ function fixTimeFormat(t) {
     return t || "";
 }
 
-// 使用者資訊
-async function updateUserInfo() {
+// 渲染打卡紀錄共用函式
+function renderRecords(data) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        todayRecords.innerHTML = `<div class="records-empty">今日尚無打卡紀錄</div>`;
+        return;
+    }
+    const recordsHTML = data.map(r => {
+        const color = r.status === "下班" ? "#2ecc71" : "#3498db";
+        const time = fixTimeFormat(r.time);
+        const isCompany = COMPANY_IPS.includes(r.ip);
+        const networkLabel = isCompany ? "公司網路" : "異地打卡";
+        const networkColor = isCompany ? "#7f8c8d" : "#e67e22";
+        const makeupBadge = r.isMakeup ? `<span class="badge-makeup">待審核</span>` : "";
+        return `
+            <div class="record-item" style="border-left-color:${color};">
+                <div class="record-info">
+                    <div class="record-status">${r.status} ${makeupBadge}</div>
+                    <div class="record-details" style="color:${networkColor};">${networkLabel}</div>
+                </div>
+                <div class="record-time" style="color:${color};">${time}</div>
+            </div>
+        `;
+    }).join("");
+    todayRecords.innerHTML = recordsHTML;
+}
+
+// 使用者資訊初始化
+async function initUserInfo() {
     try {
         const [_liff, initialIP] = await Promise.all([
             liff.init({ liffId: "2009435359-2rSzV0kR" }),
@@ -455,7 +481,7 @@ async function updateUserInfo() {
         console.log("LIFF 初始化完成", initialIP);
         if (!liff.isLoggedIn()) {
             await liff.login();
-            return;
+            return false;
         }
         const [profile, finalIP] = await Promise.all([
             liff.getProfile(),
@@ -481,6 +507,7 @@ async function updateUserInfo() {
         btnStart.disabled = false;
         btnEnd.disabled = false;
         console.log("使用者初始化完成，打卡功能已啟用");
+        return true;
     } catch (err) {
         console.error("updateUserInfo 錯誤:", err);
         window.userReady = false;
@@ -493,10 +520,11 @@ async function updateUserInfo() {
             confirmButtonText: "確定",
             customClass: { popup: "custom-swal-popup" }
         });
+        return false;
     }
 }
 
-// 今日打卡紀錄
+// 今日打卡紀錄讀取
 async function updateTodayRecords() {
     if (!window.userId) {
         return;
@@ -511,28 +539,7 @@ async function updateTodayRecords() {
             throw new Error(`HTTP ${res.status}`);
         }
         const data = await res.json();
-        if (!data || !Array.isArray(data) || data.length === 0) {
-            todayRecords.innerHTML = `<div class="records-empty">今日尚無打卡紀錄</div>`;
-            return;
-        }
-        const recordsHTML = data.map(r => {
-            const color = r.status === "下班" ? "#2ecc71" : "#3498db";
-            const time = fixTimeFormat(r.time);
-            const isCompany = COMPANY_IPS.includes(r.ip);
-            const networkLabel = isCompany ? "公司網路" : "異地打卡";
-            const networkColor = isCompany ? "#7f8c8d" : "#e67e22";
-            const makeupBadge = r.isMakeup ? `<span class="badge-makeup">待審核</span>` : "";
-            return `
-                <div class="record-item" style="border-left-color:${color};">
-                    <div class="record-info">
-                        <div class="record-status">${r.status} ${makeupBadge}</div>
-                        <div class="record-details" style="color:${networkColor};">${networkLabel}</div>
-                    </div>
-                    <div class="record-time" style="color:${color};">${time}</div>
-                </div>
-            `;
-        }).join("");
-        todayRecords.innerHTML = recordsHTML;
+        renderRecords(data);
     } catch (err) {
         console.error("今日紀錄讀取失敗:", err);
         todayRecords.innerHTML = `<div class="records-empty" style="color:#e67e22;">今日紀錄暫時無法載入</div>`;
@@ -744,6 +751,20 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
             const isCompany = COMPANY_IPS.includes(ip);
             const networkStatusStr = isCompany ? "公司網路" : "非公司網路";
             showClockSuccess(apiData, status, isMakeup, isCompany);
+            
+            // 優化點：打卡成功後，立即把新打卡紀錄插進畫面，不必乾等遠端重新抓取
+            const existingContent = todayRecords.innerHTML.includes("今日尚無打卡紀錄") ? "" : todayRecords.innerHTML;
+            const newRecordHtml = `
+                <div class="record-item" style="border-left-color:${status === "下班" ? "#2ecc71" : "#3498db"};">
+                    <div class="record-info">
+                        <div class="record-status">${status} ${isMakeup ? `<span class="badge-makeup">待審核</span>` : ""}</div>
+                        <div class="record-details" style="color:${isCompany ? "#7f8c8d" : "#e67e22"};">${isCompany ? "公司網路" : "異地打卡"}</div>
+                    </div>
+                    <div class="record-time" style="color:${status === "下班" ? "#2ecc71" : "#3498db"};">${fixTimeFormat(apiData.time)}</div>
+                </div>
+            `;
+            todayRecords.innerHTML = newRecordHtml + existingContent;
+
             sendSelfMessage({
                 userName: window.userName,
                 status: status,
@@ -753,6 +774,8 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
             }).catch(err => {
                 console.error("背景 LINE 訊息錯誤:", err);
             });
+
+            // 非同步背景拉取最新完整清單以確保資料同步
             updateTodayRecords();
         } else {
             showClockError(apiData?.message || "請檢查網路連線或重新整理頁面試試看！");
@@ -782,11 +805,16 @@ btnApprove.onclick = () => {
     window.location.href = "https://script.google.com/macros/s/AKfycbyxXrvVxfgwrI-SdXM03QEYxEpG-xqyjVQcxdNz1IBK3DtFC-kUFjHhRaNtgXNU-Mdu/exec";
 };
 
-// 初始化
+// 初始化 (平行載入優化)
 window.onload = async () => {
     console.log("系統開始初始化...");
-    await updateUserInfo();
-    updateTodayRecords();
+    
+    // 先完成的使用者驗證，一旦取得 userId 就立刻平行發動打卡紀錄查詢，減少等待時間
+    const isLoggedIn = await initUserInfo();
+    if (isLoggedIn && window.userId) {
+        updateTodayRecords();
+    }
+    
     console.log("前台初始化完成");
 };
 </script>
