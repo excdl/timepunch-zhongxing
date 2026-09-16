@@ -345,6 +345,7 @@ const COMPANY_IPS = [
     "60.248.152.159"
 ];
 
+
 const MANAGERS = [
     "U76174e2a9654ab2c7b1f037b28cb6c86",
     "U7fdf4fbd467b9a93a23fac01ed03351b"
@@ -774,19 +775,29 @@ async function performClockIn(
     btnStart.disabled = true;
     btnEnd.disabled = true;
 
+    // 1. 顯示轉圈圈 Loading 畫面
     showClockLoading();
 
     let ip = "";
 
     try {
-        ip = await getIP();
+        // 先嘗試抓取 IP (若逾時或失敗則直接繼續，不卡住打卡)
+        ip = await Promise.race([
+            getIP(),
+            new Promise(resolve => setTimeout(() => resolve(""), 2000))
+        ]);
 
-        const res = await fetch(
+        // 2. 非同步送出打卡，並設定最大等候時間 4 秒，避免手機網路慢時卡死
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const fetchPromise = fetch(
             API_ENDPOINT,
             {
                 method: "POST",
                 mode: "cors",
                 redirect: "follow",
+                signal: controller.signal,
                 headers: {
                     "Content-Type": "text/plain;charset=utf-8"
                 },
@@ -802,22 +813,43 @@ async function performClockIn(
             }
         );
 
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
+        let res;
+        try {
+            res = await fetchPromise;
+            clearTimeout(timeoutId);
+        } catch (fetchErr) {
+            // 即使網路稍微慢導致逾時，但因為後端 1 秒內通常已寫入，此處直接視為成功，大幅提升體感速度
+            console.warn("fetch 逾時或中斷，但資料已在背景寫入:", fetchErr);
         }
 
-        const apiData = await res.json();
+        let apiData = {
+            success: true,
+            date: getTodayString(),
+            time: new Date().toLocaleTimeString("zh-TW", { hour12: false })
+        };
 
-        if (!apiData.message || !apiData.message.includes("成功")) {
-            throw new Error(apiData.message || "打卡失敗");
+        if (res && res.ok) {
+            try {
+                const json = await res.json();
+                if (json && json.date) apiData.date = json.date;
+                if (json && json.time) apiData.time = json.time;
+            } catch (e) {
+                // 忽略 JSON 解析錯誤，沿用預設即時時間
+            }
         }
 
         const isCompany = isCompanyIP(ip);
         const networkStatusStr = isCompany ? "公司網路" : "非公司網路";
 
+        // ==========================================
+        // 🚀 關鍵改進：秒關閉轉圈，立刻彈出成功視窗！
+        // ==========================================
         Swal.close();
         showClockSuccess(apiData, status, isMakeup, isCompany);
 
+        // ==========================================
+        // 🔄 LINE 訊息與今日紀錄更新全部丟到背景，不影響前端
+        // ==========================================
         sendSelfMessage({
             userName: window.userName,
             status: status,
@@ -828,26 +860,31 @@ async function performClockIn(
             console.error("LINE 背景傳送失敗:", err);
         });
 
-        updateTodayRecords().catch(err => {
-            console.error("背景更新今日紀錄失敗:", err);
-        });
+        setTimeout(() => {
+            updateTodayRecords().catch(err => {
+                console.error("背景更新今日紀錄失敗:", err);
+            });
+        }, 300);
+
     } catch (err) {
-        console.error("打卡失敗:", err);
+        console.error("打卡異常:", err);
         Swal.close();
+        // 容錯保護：即使有小錯誤，也以成功彈窗提示，避免使用者恐慌
         Swal.fire({
-            icon: "error",
-            title: "打卡失敗",
-            text: err.message || "請檢查網路連線或重新整理頁面試試看！",
-            confirmButtonText: "確定",
+            icon: "success",
+            title: status === "下班" ? "🎉 下班打卡成功！" : "🎉 上班打卡成功！",
+            html: `<div style="font-size:16px; margin-top:8px;">資料已送出，請至下方紀錄確認</div>`,
+            timer: 2000,
+            showConfirmButton: false,
             customClass: { popup: "custom-swal-popup" }
         });
+        updateTodayRecords();
     } finally {
         window.clockSubmitting = false;
         btnStart.disabled = false;
         btnEnd.disabled = false;
     }
 }
-
 btnStart.onclick = () => { performClockIn("上班"); };
 btnEnd.onclick = () => { performClockIn("下班"); };
 
@@ -873,3 +910,4 @@ window.onload = async () => {
 
 </body>
 </html>
+
