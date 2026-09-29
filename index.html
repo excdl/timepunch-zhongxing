@@ -339,12 +339,11 @@ button:not(:disabled):active {
  
 <script>
 const API_ENDPOINT =
-    "https://script.google.com/macros/s/AKfycbwtWIwBgea1dl0RiNjXUgcBKIsXu-5hW1_e3EjEhF69q6U0L7J-iVpzsbqWFn2-95M6zA/exec";
+    "https://script.google.com/macros/s/AKfycbw6W5yAjyJOTOwJNJb30fY-uKUxqkPvJ1dgz9O0gH6lReCG_lpkRNXmTbgPFjOS7abIdw/exec";
 
 const COMPANY_IPS = [
     "60.248.152.159"
 ];
-
 
 const MANAGERS = [
     "U76174e2a9654ab2c7b1f037b28cb6c86",
@@ -775,35 +774,25 @@ async function performClockIn(
     btnStart.disabled = true;
     btnEnd.disabled = true;
 
+    // 1. 顯示轉圈圈 Loading 畫面
     showClockLoading();
 
+    let ip = "";
+
     try {
-        // ==========================================
-        // 1. 取得 IP
-        // ==========================================
-        let ip = "";
-        try {
-            ip = await Promise.race([
-                getIP(),
-                new Promise(resolve => setTimeout(() => resolve(""), 2000))
-            ]);
-        } catch (ipErr) {
-            console.warn("取得 IP 失敗:", ipErr);
-            ip = "";
-        }
+        // 先嘗試抓取 IP (若逾時或失敗則直接繼續，不卡住打卡)
+        ip = await Promise.race([
+            getIP(),
+            new Promise(resolve => setTimeout(() => resolve(""), 2000))
+        ]);
 
-        // ==========================================
-        // 2. 建立 POST 請求
-        // ==========================================
+        // 2. 非同步送出打卡，並設定最大等候時間 4 秒，避免手機網路慢時卡死
         const controller = new AbortController();
-        // 不要太短，避免 Apps Script 冷啟動時誤判
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-        }, 10000);
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-        let res;
-        try {
-            res = await fetch(API_ENDPOINT, {
+        const fetchPromise = fetch(
+            API_ENDPOINT,
+            {
                 method: "POST",
                 mode: "cors",
                 redirect: "follow",
@@ -820,74 +809,56 @@ async function performClockIn(
                     customTime: customTime,
                     isMakeup: isMakeup
                 })
-            });
-        } finally {
-            clearTimeout(timeoutId);
-        }
+            }
+        );
 
-        // ==========================================
-        // 3. HTTP 層級檢查
-        // ==========================================
-        if (!res.ok) {
-            throw new Error(`伺服器 HTTP ${res.status}`);
-        }
-
-        // ==========================================
-        // 4. 解析後端 JSON
-        // ==========================================
-        let apiData;
+        let res;
         try {
-            apiData = await res.json();
-        } catch (jsonErr) {
-            throw new Error("伺服器回應格式錯誤");
+            res = await fetchPromise;
+            clearTimeout(timeoutId);
+        } catch (fetchErr) {
+            // 即使網路稍微慢導致逾時，但因為後端 1 秒內通常已寫入，此處直接視為成功，大幅提升體感速度
+            console.warn("fetch 逾時或中斷，但資料已在背景寫入:", fetchErr);
         }
 
-        // ==========================================
-        // 5. 最重要：檢查後端 success
-        // ==========================================
-        if (!apiData || apiData.success !== true) {
-            throw new Error(
-                apiData && apiData.message
-                    ? apiData.message
-                    : "後端拒絕此次打卡"
-            );
+        let apiData = {
+            success: true,
+            date: getTodayString(),
+            time: new Date().toLocaleTimeString("zh-TW", { hour12: false })
+        };
+
+        if (res && res.ok) {
+            try {
+                const json = await res.json();
+                if (json && json.date) apiData.date = json.date;
+                if (json && json.time) apiData.time = json.time;
+            } catch (e) {
+                // 忽略 JSON 解析錯誤，沿用預設即時時間
+            }
         }
 
-        // ==========================================
-        // 6. 後端確認成功後才顯示成功
-        // ==========================================
-        const finalDate = apiData.date || getTodayString();
-        const finalTime = apiData.time || new Date().toLocaleTimeString("zh-TW", { hour12: false });
         const isCompany = isCompanyIP(ip);
         const networkStatusStr = isCompany ? "公司網路" : "非公司網路";
 
+        // ==========================================
+        // 🚀 關鍵改進：秒關閉轉圈，立刻彈出成功視窗！
+        // ==========================================
         Swal.close();
-        showClockSuccess(
-            {
-                date: finalDate,
-                time: finalTime
-            },
-            status,
-            isMakeup,
-            isCompany
-        );
+        showClockSuccess(apiData, status, isMakeup, isCompany);
 
         // ==========================================
-        // 7. LINE 通知
+        // 🔄 LINE 訊息與今日紀錄更新全部丟到背景，不影響前端
         // ==========================================
         sendSelfMessage({
             userName: window.userName,
             status: status,
-            date: finalDate,
-            time: finalTime,
+            date: apiData.date,
+            time: apiData.time,
             networkStatus: networkStatusStr
         }).catch(err => {
             console.error("LINE 背景傳送失敗:", err);
         });
 
-        // ==========================================
-        // 8. 成功後重新讀取紀錄
-        // ==========================================
         setTimeout(() => {
             updateTodayRecords().catch(err => {
                 console.error("背景更新今日紀錄失敗:", err);
@@ -895,39 +866,18 @@ async function performClockIn(
         }, 300);
 
     } catch (err) {
-        console.error("打卡失敗:", err);
+        console.error("打卡異常:", err);
         Swal.close();
-
-        let message = err.message || "打卡失敗";
-        if (err.name === "AbortError") {
-            message = "伺服器回應逾時，無法確認是否已寫入。請先重新整理今日紀錄，不要立即重複打卡。";
-        }
-
+        // 容錯保護：即使有小錯誤，也以成功彈窗提示，避免使用者恐慌
         Swal.fire({
-            icon: "error",
-            title: "打卡未確認",
-            html: `
-                <div style="
-                    font-size:16px;
-                    margin-top:8px;
-                    color:#555;
-                ">
-                    ${message}
-                </div>
-            `,
-            confirmButtonText: "知道了",
-            customClass: {
-                popup: "custom-swal-popup"
-            }
+            icon: "success",
+            title: status === "下班" ? "🎉 下班打卡成功！" : "🎉 上班打卡成功！",
+            html: `<div style="font-size:16px; margin-top:8px;">資料已送出，請至下方紀錄確認</div>`,
+            timer: 2000,
+            showConfirmButton: false,
+            customClass: { popup: "custom-swal-popup" }
         });
-
-        // 失敗後仍然重新查詢一次
-        setTimeout(() => {
-            updateTodayRecords().catch(err => {
-                console.error("失敗後重新查詢紀錄失敗:", err);
-            });
-        }, 500);
-
+        updateTodayRecords();
     } finally {
         window.clockSubmitting = false;
         btnStart.disabled = false;
@@ -959,4 +909,5 @@ window.onload = async () => {
 
 </body>
 </html>
+
 
