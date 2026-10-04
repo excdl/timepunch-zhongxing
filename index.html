@@ -339,7 +339,7 @@ button:not(:disabled):active {
  
 <script>
 const API_ENDPOINT =
-    "https://script.google.com/macros/s/AKfycbxL05Q9C7tK6iTVlJNu5uFkYHoRosITiP_E1EWrH3xlAZ63tWtoyDsmOdDarXfNRgXfpQ/exec";
+    "https://script.google.com/macros/s/AKfycbxYvrnN78BZqiPTHgs7jYjxZUnQdhFpyqQO0r51ZJ3Ri1Pk7OnRh58cMik1lIipsS7fJQ/exec";
 
 const COMPANY_IPS = [
     "60.248.152.159"
@@ -391,12 +391,11 @@ updateDateTime();
 
 function getTodayString() {
     const now = new Date();
-
     return now.toLocaleDateString("zh-TW", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit"
-    });
+    }).replace(/\//g, "/");
 }
 
 function isCompanyIP(ip) {
@@ -527,7 +526,7 @@ function showClockLoading() {
 
 async function updateUserInfo() {
     const liffInit = liff.init({
-        liffId: "2009435359-2rSzV0kR"
+        liffId: " 2009435359-2rSzV0kR"
     });
 
     const [_, ip] = await Promise.all([
@@ -774,19 +773,16 @@ async function performClockIn(
     btnStart.disabled = true;
     btnEnd.disabled = true;
 
-    // 1. 顯示轉圈圈 Loading 畫面
     showClockLoading();
 
     let ip = "";
 
     try {
-        // 先嘗試抓取 IP (若逾時或失敗則直接繼續，不卡住打卡)
         ip = await Promise.race([
             getIP(),
             new Promise(resolve => setTimeout(() => resolve(""), 2000))
         ]);
 
-        // 2. 非同步送出打卡，並設定最大等候時間 8 秒，避免手機網路慢時卡死
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -817,7 +813,6 @@ async function performClockIn(
             res = await fetchPromise;
             clearTimeout(timeoutId);
         } catch (fetchErr) {
-            // 即使網路稍微慢導致逾時，但因為後端 1 秒內通常已寫入，此處直接視為成功，大幅提升體感速度
             console.warn("fetch 逾時或中斷，但資料已在背景寫入:", fetchErr);
         }
 
@@ -832,23 +827,16 @@ async function performClockIn(
                 const json = await res.json();
                 if (json && json.date) apiData.date = json.date;
                 if (json && json.time) apiData.time = json.time;
-            } catch (e) {
-                // 忽略 JSON 解析錯誤，沿用預設即時時間
-            }
+            } catch (e) {}
         }
 
         const isCompany = isCompanyIP(ip);
         const networkStatusStr = isCompany ? "公司網路" : "非公司網路";
 
-        // ==========================================
-        // 🚀 關鍵改進：秒關閉轉圈，立刻彈出成功視窗！
-        // ==========================================
         Swal.close();
         showClockSuccess(apiData, status, isMakeup, isCompany);
 
-        // ==========================================
-        // 🔄 LINE 訊息與今日紀錄更新全部丟到背景，不影響前端
-        // ==========================================
+        // 確保 LIFF 訊息與今日紀錄背景更新正常執行
         sendSelfMessage({
             userName: window.userName,
             status: status,
@@ -863,12 +851,11 @@ async function performClockIn(
             updateTodayRecords().catch(err => {
                 console.error("背景更新今日紀錄失敗:", err);
             });
-        }, 300);
+        }, 500);
 
     } catch (err) {
         console.error("打卡異常:", err);
         Swal.close();
-        // 容錯保護：即使有小錯誤，也以成功彈窗提示，避免使用者恐慌
         Swal.fire({
             icon: "success",
             title: status === "下班" ? "🎉 下班打卡成功！" : "🎉 上班打卡成功！",
@@ -884,6 +871,7 @@ async function performClockIn(
         btnEnd.disabled = false;
     }
 }
+
 btnStart.onclick = () => { performClockIn("上班"); };
 btnEnd.onclick = () => { performClockIn("下班"); };
 
@@ -896,16 +884,26 @@ if (approveButton) {
 }
 
 window.onload = async () => {
+    // 提早發送 ping 喚醒 GAS
     fetch(`${API_ENDPOINT}?action=ping`, { cache: "no-store" }).catch(() => {});
 
     try {
+        // 1. 優先確保使用者身分與 IP 抓取完畢
         await updateUserInfo();
-        await updateTodayRecords();
+        
+        // 2. 稍微延遲或直接在背景呼叫今日紀錄，避免卡住首屏渲染
+        setTimeout(() => {
+            updateTodayRecords().catch(err => {
+                console.warn("背景載入今日紀錄:", err);
+            });
+        }, 200);
+
     } catch (err) {
         console.error("初始化失敗:", err);
     }
 };
 </script>
+
 
 </body>
 </html>
